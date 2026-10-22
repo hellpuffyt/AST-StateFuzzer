@@ -108,3 +108,36 @@ fn gen_is_deterministic() {
     assert_eq!(a, b);
     assert!(a.contains("# seed 4 program 2"));
 }
+
+#[test]
+fn a_garbage_file_in_the_corpus_does_not_stop_a_campaign() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("good.mini"), "print 1 + 2;").unwrap();
+    fs::write(dir.path().join("junk.mini"), [0xffu8, 0x00, 0xc3, 0x28]).unwrap();
+    let d = dir.path().to_str().unwrap();
+    let o = astfuzz(&["run", "--seed", "1", "--iterations", "300", "--corpus", d, "--save-corpus"]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(0), "{err}");
+    assert!(err.contains("skipping") && err.contains("junk.mini") && err.contains("UTF-8"), "{err}");
+    // The junk file is left alone; the saved corpus loads cleanly next time.
+    assert!(dir.path().join("junk.mini").exists());
+    let o = astfuzz(&["corpus", "stats", d]);
+    assert_eq!(o.status.code(), Some(0));
+    assert!(stdout(&o).contains("1 rejected"), "{}", stdout(&o));
+}
+
+#[test]
+fn json_reports_are_reproducible() {
+    let run = || {
+        let o =
+            astfuzz(&["run", "--seed", "6", "--iterations", "2000", "--plant", "typeck-eq-mixed", "--json"]);
+        assert_eq!(o.status.code(), Some(1));
+        let mut v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+        v["stats"]["elapsed_ms"] = serde_json::Value::Null;
+        v
+    };
+    let a = run();
+    assert_eq!(a, run());
+    assert_eq!(a["config"]["seed"], 6);
+    assert_eq!(a["planted"][0], "typeck-eq-mixed");
+}

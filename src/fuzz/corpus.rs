@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use super::exec::{ExecConfig, check};
@@ -41,20 +41,38 @@ pub struct Entry {
     pub program: Program,
 }
 
+/// Most `*.mini` files [`load`] reads and [`save_all`] lets a corpus
+/// directory grow to. The in-memory corpus of a campaign is bounded
+/// separately: a program joins it only if it adds an execution feature, so it
+/// never exceeds the (finite) feature space.
+pub const MAX_CORPUS_FILES: usize = 10_000;
+
 /// Result of loading a corpus directory.
 #[derive(Debug, Default)]
 pub struct Loaded {
     /// Successfully parsed, canonically unique entries, sorted by file name.
     pub entries: Vec<Entry>,
-    /// Files that failed to parse, with the reason.
+    /// Files that could not be used (unreadable, not UTF-8, too large, or not
+    /// a valid program), with the reason.
     pub rejected: Vec<(PathBuf, String)>,
     /// Files skipped as canonical duplicates of an earlier entry.
     pub duplicates: Vec<PathBuf>,
+    /// Files not read because the directory holds more than the limit
+    /// (the last ones in name order).
+    pub over_limit: Vec<PathBuf>,
 }
 
 /// Load every `*.mini` file in `dir` (non-recursive, sorted by name so the
-/// order — and therefore every fuzzing run — is deterministic).
+/// order — and therefore every fuzzing run — is deterministic), reading at
+/// most [`MAX_CORPUS_FILES`] files.
 pub fn load(dir: &Path) -> io::Result<Loaded> {
+    load_with_limit(dir, MAX_CORPUS_FILES)
+}
+
+/// [`load`] with an explicit file limit. Only an unreadable *directory* is an
+/// error; every problem with an individual file (permissions, invalid UTF-8,
+/// truncation, size, a directory named `*.mini`) rejects just that file.
+pub fn load_with_limit(dir: &Path, max_files: usize) -> io::Result<Loaded> {
     let mut paths: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(Result::ok)
         .map(|e| e.path())
@@ -62,13 +80,18 @@ pub fn load(dir: &Path) -> io::Result<Loaded> {
         .collect();
     paths.sort();
     let mut out = Loaded::default();
+    if paths.len() > max_files {
+        out.over_limit = paths.split_off(max_files);
+    }
     let mut seen = BTreeSet::new();
     for path in paths {
-        if fs::metadata(&path)?.len() > MAX_SOURCE_BYTES as u64 {
-            out.rejected.push((path, format!("file is larger than {MAX_SOURCE_BYTES} bytes")));
-            continue;
-        }
-        let text = fs::read_to_string(&path)?;
+        let text = match read_source(&path) {
+            Ok(t) => t,
+            Err(why) => {
+                out.rejected.push((path, why));
+                continue;
+            }
+        };
         match parse(&text) {
             Ok(program) => {
                 if seen.insert(canonical_hash(&program)) {
@@ -83,19 +106,86 @@ pub fn load(dir: &Path) -> io::Result<Loaded> {
     Ok(out)
 }
 
+/// Read one corpus file, refusing oversized and non-UTF-8 files without
+/// reading more than the size limit.
+fn read_source(path: &Path) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| format!("cannot read: {e}"))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_SOURCE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read: {e}"))?;
+    if bytes.len() > MAX_SOURCE_BYTES {
+        return Err(format!("file is larger than {MAX_SOURCE_BYTES} bytes"));
+    }
+    String::from_utf8(bytes).map_err(|e| format!("not valid UTF-8 ({})", e.utf8_error()))
+}
+
 /// File name a program is stored under.
 pub fn file_name(p: &Program) -> String {
     format!("{:016x}.mini", canonical_hash(p))
 }
 
 /// Save a program in canonical form; returns its path. Idempotent.
+///
+/// The file is written to a temporary name and renamed into place, so a
+/// crash never leaves a partial file under a canonical name. A file that
+/// already exists under the canonical name is kept only if it holds exactly
+/// the canonical text; anything else (e.g. a truncated file from an older,
+/// interrupted write) is replaced.
 pub fn save(dir: &Path, p: &Program) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let path = dir.join(file_name(p));
-    if !path.exists() {
-        fs::write(&path, print_program(p))?;
+    let text = print_program(p);
+    if fs::read(&path).is_ok_and(|existing| existing == text.as_bytes()) {
+        return Ok(path);
     }
-    Ok(path)
+    let tmp = dir.join(format!(".{}.tmp", file_name(p)));
+    let written = (|| {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+        fs::rename(&tmp, &path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written.map(|()| path)
+}
+
+/// What [`save_all`] did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SaveSummary {
+    /// New files written.
+    pub written: usize,
+    /// Programs whose canonical file was already present (and correct).
+    pub already_present: usize,
+    /// Programs not saved because the directory reached the file limit.
+    pub skipped_over_limit: usize,
+}
+
+/// Save `programs`, never letting `dir` hold more than `max_files` `*.mini`
+/// files. Programs already present cost nothing; new ones are written in
+/// order until the limit is reached and the rest are counted as skipped.
+pub fn save_all(dir: &Path, programs: &[Program], max_files: usize) -> io::Result<SaveSummary> {
+    fs::create_dir_all(dir)?;
+    let mut count = fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "mini"))
+        .count();
+    let mut s = SaveSummary::default();
+    for p in programs {
+        if dir.join(file_name(p)).is_file() {
+            save(dir, p)?;
+            s.already_present += 1;
+        } else if count < max_files {
+            save(dir, p)?;
+            count += 1;
+            s.written += 1;
+        } else {
+            s.skipped_over_limit += 1;
+        }
+    }
+    Ok(s)
 }
 
 /// Behaviour signature: output, final result and coverage features.

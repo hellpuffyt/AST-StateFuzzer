@@ -12,12 +12,34 @@
 ## Coverage
 - Feedback is **execution-feature coverage, not CFG coverage** (see `docs/COVERAGE.md`). The feature space is
   small (a few hundred features), so coverage plateaus quickly.
-- No line/region coverage report was produced for this release.
+- Test-suite line/region coverage is measured (96.9 % lines, `docs/COVERAGE.md`); campaign CFG coverage is not.
 
 ## Determinism
 - Runs are deterministic for a given `(seed, config, seed corpus)` **except** for wall-clock timeouts (default 2 s
   per run, rarely reached because fuel ends runs first) and `stats.elapsed_ms`.
 - Changing the generator, mutators or RNG changes what a seed produces; `rng_stream_is_pinned` only guards the RNG.
+
+## Classification
+- Four outcomes are distinguished: **crash** (a panic in any stage, signature = stage + location + normalized
+  message), **timeout** (fuel or wall clock, split into `timeout:fuel` / `timeout:wall-clock`; findings only with
+  `--timeouts-are-failures`), **invariant violation** (named by oracle), and **expected program errors**
+  (`Overflow`, `DivByZero`, and `Type`/`Unbound` in programs the type checker rejects), which are correct behaviour
+  and never findings. Tested in `tests/classification.rs`.
+- **Hangs outside the interpreter are not detected.** Fuel and the wall-clock check bound only interpreter runs.
+  The printer, parser, type checker and optimizer are structurally recursive over a finite AST and terminate for
+  Mini, so this is not reachable today; a target with non-terminating passes needs an out-of-process watchdog.
+- **A timeout of the optimized program is not a finding.** If the original run finishes but the optimized one
+  runs out of budget, the optimizer-equivalence oracle skips the comparison. Mini's optimizer only removes
+  nodes, so it cannot need more fuel than the original; an optimizer bug that introduces non-termination would
+  still be missed.
+
+## Corpus
+- Writes are atomic (temp file + rename, fsync) and an existing file under a canonical name is rewritten unless it
+  holds exactly the canonical text. Unreadable, non-UTF-8, truncated and oversized files are rejected one by one.
+- At most 10 000 `*.mini` files are loaded (`corpus::MAX_CORPUS_FILES`, the first in name order) and
+  `--save-corpus` stops adding files at that count, with a warning. The in-memory corpus of a campaign is bounded
+  by the finite feature space (a program joins only if it adds a feature). The tool never deletes corpus files;
+  compact with `astfuzz corpus dedup`.
 
 ## Minimization
 - Passes: statement ddmin, statement unwrapping, expression hoisting, literal shrinking, variable → literal. It does

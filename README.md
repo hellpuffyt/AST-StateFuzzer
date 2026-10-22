@@ -65,7 +65,7 @@ Without `--plant` the same file passes (`PASS (all oracles agree)`, exit 0).
 - Oracles: `roundtrip-parse`, `roundtrip-ast`, `type-soundness`, `optimizer-equivalence`; crash capture via `catch_unwind` with panic location; timeouts by fuel or wall clock (reported as findings only with `--timeouts-are-failures`).
 - Execution-feature coverage feedback (statement kinds, operator × result class, operator nesting, branch direction, loop-count buckets, error kinds). **Not CFG coverage**, see [`docs/COVERAGE.md`](docs/COVERAGE.md).
 - Grammar-aware minimizer: statement ddmin, statement unwrapping, expression hoisting / literal shrinking; keeps the exact failure signature; budgeted.
-- Corpus on disk (`*.mini`), canonical-hash file names, canonical and behavioural deduplication, non-destructive `corpus dedup`.
+- Corpus on disk (`*.mini`), canonical-hash file names, atomic writes (temp file + rename) that also repair a corrupted canonical file, per-file rejection of unreadable / non-UTF-8 / truncated / oversized files, a 10 000-file cap on loading and on `--save-corpus` growth, canonical and behavioural deduplication, non-destructive `corpus dedup`.
 - JSON report: seed, iteration, failure class and signature, details, reproducer, minimized program, minimization and campaign statistics.
 - Four planted bugs (`opt-sub-assoc`, `print-sub-parens`, `typeck-eq-mixed`, `interp-rem-panic`) with acceptance tests and regression fixtures.
 
@@ -118,19 +118,21 @@ With `--out DIR`, `run` writes `report.json`, `finding-<i>.mini` (as found) and 
 | `--seed` | 0 | master seed; iteration *i* uses `Rng::fork(seed, i)` |
 | `--iterations` | 10000 | programs to generate or mutate |
 | `--fuel` | 20000 | interpreter steps per run |
-| `--max-depth` / `--max-stmts` | 5 / 6 | generator budgets |
+| `--max-depth` / `--max-stmts` | 5 / 6 | generator budgets: expression height / statements drawn per block (a bounded loop adds its counter `let` and increment) |
 | `--minimize-budget` | 5000 | oracle runs per minimization |
 | `--plant` | none | enable a planted bug (repeatable) |
 
 ## Testing
 
 ```sh
-cargo test --release            # 39 tests: language, oracles, determinism, minimizer, corpus, CLI, acceptance
+cargo test --release            # 59 tests: language, grammar properties, oracles, classification, determinism, minimizer, corpus, CLI, acceptance
 cargo +nightly fuzz run -O oracles -- -max_total_time=60          # optional, needs cargo-fuzz
 ASTFUZZ_PLANT=opt-sub-assoc cargo +nightly fuzz run -O oracles   # should stop with a crash artifact
 ```
 
 The key tests: `planted_bugs_are_found_and_minimized` (each planted bug is found from seed 1 within 20 000 iterations and minimized to ≤ 10 nodes that still fail the same way and pass without the bug), `correct_implementation_has_no_findings` (no false positives), `same_seed_same_campaign` and `rng_stream_is_pinned` (reproducibility), `hostile_nesting_is_rejected_not_stack_overflowed`. Results from this machine are recorded in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
+
+Measured, not claimed: the test suite covers 96.9 % of lines and 95.8 % of regions of the crate (`cargo llvm-cov --release`), and the whole suite plus 60-second libFuzzer runs of both fuzz targets pass under AddressSanitizer. Commands and per-file numbers: [`docs/COVERAGE.md`](docs/COVERAGE.md#test-suite-coverage-measured).
 
 ## Security model
 

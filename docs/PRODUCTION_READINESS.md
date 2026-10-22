@@ -152,3 +152,30 @@ service, permission or hardware.
 | 19 | Clean clone | README quick start works from a fresh clone | clean-clone commands above | pass | identical output, 39/39, clean tree | `README.md` |
 | 20 | Linux / Windows | Tests pass | CI `test` matrix | not yet run | — | `.github/workflows/ci.yml` |
 | 21 | CI green | All jobs pass on GitHub | Actions | not yet run | — | `.github/workflows/` |
+
+## Deep audit addendum (2026-10-22, after `fc6ce48`)
+
+Scope: grammar conformance of generated programs, invalid-input (ill-typed) mode, reproducibility, failure
+classification, minimizer signature preservation, corpus robustness and growth, sanitizers, measured coverage.
+Result: 59 passed, 0 failed, 0 ignored (was 39), in debug, release and on Rust 1.85.
+
+| finding | severity | fix | regression evidence |
+|---|---|---|---|
+| A single non-UTF-8 file in a corpus directory made `corpus::load` fail, so `astfuzz run --corpus DIR` exited 2 | reliability (one bad file stops every campaign) | per-file rejection with the reason | `garbage_and_truncated_files_are_rejected_one_by_one` and `a_garbage_file_in_the_corpus_does_not_stop_a_campaign` (the first fails on the old code with `InvalidData`) |
+| `corpus::save` wrote in place and trusted any existing file under the canonical name; a truncated file from an interrupted write survived every later save | data integrity | temp file + fsync + rename; rewrite unless the content is exactly canonical | `save_repairs_a_corrupted_file_under_the_canonical_name` fails on the old code |
+| Corpus directories could grow without limit across `--save-corpus` runs | bounded growth | `MAX_CORPUS_FILES` (10 000) on load and save, reported by the CLI | `corpus_growth_on_disk_is_capped`, `loading_is_capped_and_reports_what_was_skipped` |
+| `GenConfig` said "all budgets are hard limits", but a bounded loop adds two statements per draw | docs | exact bound documented and property-tested | `generated_programs_respect_the_budgets` |
+
+New evidence: `tests/grammar.rs` (512 random seeds × random generator settings per property: print → parse is the
+identity, budgets hold, no unbound variables, mutation keeps programs grammatical; ill-typed mode at 100 % yields
+type errors with valid syntax), `tests/classification.rs` (crash / fuel timeout / wall-clock timeout / three
+invariant oracles / expected program errors; timeouts never reported as wrong answers; minimized findings keep the
+exact signature for each planted bug alone and all four together over 3 seeds; campaigns are prefixes of longer
+campaigns; config is part of the reproduction key; corpus size ≤ feature count), two CLI tests (garbage corpus file,
+reproducible `--json`). Coverage and sanitizer measurements: `docs/COVERAGE.md`.
+
+Commands (macOS aarch64), all exit 0: `cargo fmt --all --check`; `cargo clippy --all-targets --all-features --locked
+-- -D warnings` on 1.98.0 and 1.99.1; `cargo test --locked` (debug) and `cargo test --release --locked`;
+`cargo +1.85 test --locked`; `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked`; `cargo deny check`;
+`cargo audit` (offline DB); `cargo llvm-cov --release --summary-only`; the ASan test run and the two 60-second
+`cargo fuzz` runs listed in `docs/COVERAGE.md`.

@@ -8,7 +8,12 @@
 use super::rng::Source;
 use crate::lang::ast::{BinOp, Expr, Program, Stmt, Ty, UnOp};
 
-/// Knobs for generation. All budgets are hard limits.
+/// Knobs for generation. All budgets are hard limits, with one documented
+/// allowance: a bounded loop is emitted as `let i = 0; while i < K { ..; i = i + 1; }`,
+/// so one statement draw can add two statements to a block and one to the loop
+/// body (a block holds at most `2 * max_stmts + 1` statements), and the loop
+/// condition and increment have height 2 even when `max_expr_depth` is lower.
+/// `tests/grammar.rs` checks these bounds for arbitrary seeds and settings.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GenConfig {
     /// Maximum expression height.

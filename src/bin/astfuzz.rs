@@ -203,6 +203,14 @@ fn cmd_run(a: &RunArgs) -> Result<ExitCode> {
             for (p, why) in &loaded.rejected {
                 eprintln!("warning: skipping {}: {why}", p.display());
             }
+            if !loaded.over_limit.is_empty() {
+                eprintln!(
+                    "warning: {} holds more than {} corpus files; {} were not loaded (compact it with `astfuzz corpus dedup`)",
+                    dir.display(),
+                    corpus::MAX_CORPUS_FILES,
+                    loaded.over_limit.len()
+                );
+            }
             loaded.entries.into_iter().map(|e| e.program).collect()
         }
         _ => Vec::new(),
@@ -210,8 +218,15 @@ fn cmd_run(a: &RunArgs) -> Result<ExitCode> {
     let report = engine::run(&cfg, &exec, &seeds);
 
     if let (Some(dir), true) = (&a.corpus, a.save_corpus) {
-        for p in &report.corpus {
-            corpus::save(dir, p)?;
+        let saved = corpus::save_all(dir, &report.corpus, corpus::MAX_CORPUS_FILES)
+            .with_context(|| format!("saving corpus {}", dir.display()))?;
+        if saved.skipped_over_limit > 0 {
+            eprintln!(
+                "warning: {} reached {} corpus files; {} new entries were not saved (compact it with `astfuzz corpus dedup`)",
+                dir.display(),
+                corpus::MAX_CORPUS_FILES,
+                saved.skipped_over_limit
+            );
         }
     }
     if let Some(out) = &a.out {
@@ -317,11 +332,13 @@ fn cmd_corpus(cmd: CorpusCmd) -> Result<ExitCode> {
         CorpusCmd::Stats { dir } => {
             let l = corpus::load(&dir)?;
             println!(
-                "{}: {} unique, {} canonical duplicates, {} rejected",
+                "{}: {} unique, {} canonical duplicates, {} rejected, {} over the {}-file limit",
                 dir.display(),
                 l.entries.len(),
                 l.duplicates.len(),
-                l.rejected.len()
+                l.rejected.len(),
+                l.over_limit.len(),
+                corpus::MAX_CORPUS_FILES
             );
             for (p, why) in &l.rejected {
                 println!("  rejected {}: {why}", p.display());

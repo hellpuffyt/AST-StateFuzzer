@@ -40,7 +40,7 @@ flowchart TB
 | `fuzz/mutate.rs` | Eight tree mutations. |
 | `fuzz/exec.rs` | Runs every oracle; captures panics with location; classifies failures. |
 | `fuzz/minimize.rs` | Signature-preserving, cost-decreasing reduction. |
-| `fuzz/corpus.rs` | Disk format, canonical and behavioural dedup. |
+| `fuzz/corpus.rs` | Disk format, atomic writes, per-file rejection of bad files, 10 000-file cap, canonical and behavioural dedup. |
 | `fuzz/engine.rs` | The loop, statistics, JSON report. |
 
 ## Data flow of one iteration

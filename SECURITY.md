@@ -21,7 +21,7 @@ relevant guarantees are:
   or given access to files, the network, or the environment. Mini has no I/O besides `print`.
 - Every run is bounded by a step budget (fuel) and a wall-clock check; the parser rejects inputs over 1 MiB and
   nesting deeper than 200, so hostile input cannot exhaust the stack of later recursive passes.
-- `astfuzz corpus dedup` never writes into its input directory; `run --save-corpus` only adds files.
+- `astfuzz corpus dedup` never writes into its input directory; `run --save-corpus` only adds files (atomically, up to 10 000 per directory) and never deletes.
 
 Out of scope: denial of service through very large `--iterations` or `--fuel` values you choose yourself, and the
 behaviour of other targets you wire into the harness yourself (see "Fuzzing other targets safely" in
