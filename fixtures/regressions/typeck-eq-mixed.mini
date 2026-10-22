@@ -1,0 +1,4 @@
+# plant: typeck-eq-mixed
+# expect: invariant-violation:type-soundness
+# The planted type checker accepts Bool == Int; the interpreter raises a type error.
+print false != 0;

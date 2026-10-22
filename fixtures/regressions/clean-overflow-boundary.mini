@@ -1,0 +1,6 @@
+# plant: none
+# expect: pass
+# Folding must not turn a checked overflow into a value (or i64::MIN into an
+# unprintable literal).
+print -9223372036854775807 - 1;
+print 9223372036854775807 + 1;

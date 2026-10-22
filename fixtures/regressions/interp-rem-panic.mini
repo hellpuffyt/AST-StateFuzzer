@@ -1,0 +1,5 @@
+# plant: interp-rem-panic
+# expect: crash:interp:
+# A negative remainder indexes the planted lookup table out of bounds.
+let v0 = -1;
+let v2 = v0 % 2;

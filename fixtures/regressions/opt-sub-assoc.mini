@@ -1,0 +1,6 @@
+# plant: opt-sub-assoc
+# expect: invariant-violation:optimizer-equivalence
+# Minimized by `astfuzz run --seed 1 --plant opt-sub-assoc --stop-on-first`.
+# Correct: 0 - (0 - 1) = 1. The planted rewrite computes (0 - 0) - 1 = -1.
+let v0 = 1;
+print 0 - (0 - v0);

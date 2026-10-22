@@ -1,0 +1,6 @@
+# Seed: arithmetic edge cases.
+let a = 9223372036854775807;
+let b = -a - 1;
+print a / 2;
+print b % 7;
+print (a - 1) * 1;

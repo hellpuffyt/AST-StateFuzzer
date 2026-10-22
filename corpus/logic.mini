@@ -1,0 +1,9 @@
+# Seed: boolean logic, comparisons and branches.
+let x = 3;
+let ok = x < 5 && !(x == 4) || false;
+if ok {
+    print x <= 3;
+} else {
+    print false;
+}
+print (x < 1) == false;

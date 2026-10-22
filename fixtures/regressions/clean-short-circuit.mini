@@ -1,0 +1,6 @@
+# plant: none
+# expect: pass
+# Regression guard: the optimizer must not fold away the division by zero, and
+# short-circuiting must skip it on the left but not on the right.
+print false && 1 / 0 == 0;
+print 1 / 0 == 0 || true;

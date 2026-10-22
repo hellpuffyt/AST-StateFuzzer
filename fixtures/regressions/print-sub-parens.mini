@@ -1,0 +1,4 @@
+# plant: print-sub-parens
+# expect: invariant-violation:roundtrip-ast
+# The planted printer emits `true - 0 + 0`, which parses as `(true - 0) + 0`.
+print true - (0 + 0);
