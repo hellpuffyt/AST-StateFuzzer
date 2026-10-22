@@ -1,0 +1,15 @@
+/target
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/coverage
+*.profraw
+*.profdata
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
+*.swp
+# local outputs from the quick start
+/findings
