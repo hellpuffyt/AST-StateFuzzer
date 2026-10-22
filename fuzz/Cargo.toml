@@ -1,0 +1,30 @@
+[package]
+name = "ast-statefuzzer-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ast-statefuzzer = { path = ".." }
+
+# Kept out of the main crate's build: needs nightly + cargo-fuzz.
+[workspace]
+
+[[bin]]
+name = "oracles"
+path = "fuzz_targets/oracles.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_roundtrip"
+path = "fuzz_targets/parse_roundtrip.rs"
+test = false
+doc = false
+bench = false
