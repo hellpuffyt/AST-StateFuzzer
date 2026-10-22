@@ -1,0 +1,31 @@
+# Environment-dependent job, kept separate from portable CI: needs a nightly
+# toolchain and cargo-fuzz (libFuzzer + SanitizerCoverage). Runs weekly and on
+# demand rather than on every push.
+name: libFuzzer
+on:
+  workflow_dispatch:
+  schedule: [{ cron: "17 3 * * 1" }]
+permissions:
+  contents: read
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; toolchain input overrides
+        with: { toolchain: nightly }
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with: { tool: cargo-fuzz }
+      - run: cargo +nightly fuzz build -O
+      - name: Clean targets run for 5 minutes each without findings
+        run: |
+          cargo +nightly fuzz run -O oracles -- -max_total_time=300
+          cargo +nightly fuzz run -O parse_roundtrip -- -max_total_time=300
+      - name: Harness detects a planted bug
+        shell: bash
+        run: |
+          set +e
+          ASTFUZZ_PLANT=opt-sub-assoc cargo +nightly fuzz run -O oracles -- -max_total_time=300
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "::error::planted bug not detected by the libFuzzer harness"; exit 1; fi

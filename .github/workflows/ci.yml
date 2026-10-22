@@ -1,0 +1,69 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with: { components: "rustfmt, clippy" }
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - run: cargo doc --no-deps --all-features --locked
+        env: { RUSTDOCFLAGS: "-D warnings" }
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, macos-latest, windows-latest] }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --all-features --locked
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; toolchain input overrides
+        with: { toolchain: "1.85" }
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --locked
+
+  # Acceptance: the fuzzer finds and minimizes each planted bug from a fixed
+  # seed (exit 1 = findings), and finds nothing in the correct implementation.
+  fuzz-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo build --release --locked
+      - name: Clean implementation, fixed seed and budget
+        run: ./target/release/astfuzz run --seed 2026 --iterations 50000 --corpus corpus
+      - name: Planted bugs are found and minimized
+        shell: bash
+        run: |
+          for bug in opt-sub-assoc print-sub-parens typeck-eq-mixed interp-rem-panic; do
+            set +e
+            ./target/release/astfuzz run --seed 1 --iterations 20000 --plant "$bug" --stop-on-first --out "findings/$bug"
+            code=$?
+            set -e
+            if [ "$code" -ne 1 ]; then echo "::error::$bug not found (exit $code)"; exit 1; fi
+            cat "findings/$bug/finding-0.min.mini"
+          done
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1

@@ -1,0 +1,28 @@
+name: Bug report
+description: The fuzzer, minimizer or the Mini implementation misbehaves (false positive, missed bug, crash of astfuzz itself).
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact command and its full output.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproducer
+      description: A `.mini` file plus the flags (`astfuzz replay --plant ... file.mini`), or the seed, iteration count and flags of `astfuzz run`.
+      render: text
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Which oracle or documented rule (docs/LANGUAGE.md) do you believe is wrong?
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, CPU, `rustc -V`, AST-StateFuzzer version or commit.
+    validations: { required: true }
