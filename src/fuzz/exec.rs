@@ -102,7 +102,9 @@ fn install_hook() {
                     .unwrap_or_else(|| "non-string panic payload".into());
                 let loc = info
                     .location()
-                    .map(|l| format!("{}:{}", l.file(), l.line()))
+                    // Normalise separators so a signature is identical on every OS
+                    // (Windows reports `src\lang\interp.rs`).
+                    .map(|l| format!("{}:{}", l.file().replace('\\', "/"), l.line()))
                     .unwrap_or_else(|| "unknown".into());
                 LAST_PANIC.with(|p| *p.borrow_mut() = Some((msg, loc)));
             } else {
