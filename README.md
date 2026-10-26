@@ -6,9 +6,18 @@
 
 > **Status: experimental, v0.1.0, not production-ready.** The initial target is *Mini*, a small language implemented in this repository. Pointing the engine at other languages means writing a generator, printer and oracles for them (see [Limitations](#limitations-and-roadmap)).
 
+[Case study ↗](https://hellpuff.dev/work/ast-statefuzzer)
+
+## Demo
+
+<img src="docs/screenshots/planted-bug-found-and-replayed.png" width="100%" alt="Terminal: astfuzz run finds the planted opt-sub-assoc optimizer bug from seed 1 and minimizes a 52-node program to two lines; replay of the minimized file fails with the bug planted and passes without it">
+
+Real terminal capture of a release build: a campaign that finds a planted optimizer bug, then the committed reproducer
+replayed with and without the bug. The same run as text:
+
 ```console
 $ astfuzz run --seed 1 --iterations 20000 --plant opt-sub-assoc --stop-on-first
-seed 1 | 1750 executions (371 generated, 1400 mutated, 21 oversize skipped) | corpus 118 | features 244 | timeouts 6 | 70 ms
+seed 1 | 1750 executions (371 generated, 1400 mutated, 21 oversize skipped) | corpus 118 | features 244 | timeouts 6 | 90 ms
 planted bugs enabled: opt-sub-assoc
 1 unique finding(s)
 
@@ -19,7 +28,7 @@ planted bugs enabled: opt-sub-assoc
       print 0 - (0 - v0);
 ```
 
-A deliberately planted optimizer bug (`a - (b - c)` rewritten as `(a - b) - c`) is found from seed 1 and the 52-node random program that exposed it is reduced to two lines. The variable stays because with a literal the optimizer constant-folds `0 - 1` first and the buggy rewrite never fires: the minimizer keeps exactly what the bug needs. (Measured on an Apple M5 under heavy load from other builds; times will differ on your machine.)
+A deliberately planted optimizer bug (`a - (b - c)` rewritten as `(a - b) - c`) is found from seed 1 and the 52-node random program that exposed it is reduced to two lines. The variable stays because with a literal the optimizer constant-folds `0 - 1` first and the buggy rewrite never fires: the minimizer keeps exactly what the bug needs. Everything except the final timing is deterministic for a given seed. (Timing measured on an Apple M5 that was also running other builds; it will differ on your machine.)
 
 ## Why
 
@@ -104,12 +113,16 @@ Details, module map and the sandboxing guidance for other targets: [`docs/ARCHIT
 astfuzz run       [--seed N] [--iterations N] [--plant BUG]... [--corpus DIR [--save-corpus]] [--out DIR]
                   [--fuel N] [--timeouts-are-failures] [--no-minimize] [--minimize-budget N]
                   [--stop-on-first] [--max-depth N] [--max-stmts N] [--json]
-astfuzz replay    [--plant BUG]... [--fuel N] FILE
-astfuzz minimize  [--plant BUG]... [--budget N] [--out FILE] FILE
+astfuzz replay    [--plant BUG]... [--fuel N] [--timeouts-are-failures] FILE
+astfuzz minimize  [--plant BUG]... [--fuel N] [--timeouts-are-failures] [--budget N] [--out FILE] FILE
 astfuzz corpus stats DIR
-astfuzz corpus dedup DIR --out OUT
+astfuzz corpus dedup [--plant BUG]... [--fuel N] [--timeouts-are-failures] DIR --out OUT
 astfuzz gen       [--seed N] [--count N]
+astfuzz --version | --help | <command> --help
 ```
+
+`corpus/` holds three hand-written seed programs (`arith.mini`, `logic.mini`, `loops.mini`); CI runs
+`astfuzz run --seed 2026 --iterations 50000 --corpus corpus` against them as a no-false-positive check.
 
 With `--out DIR`, `run` writes `report.json`, `finding-<i>.mini` (as found) and `finding-<i>.min.mini` (minimized). Every flag has a default; there is no configuration file and no environment variable except `ASTFUZZ_PLANT` for the libFuzzer target.
 
